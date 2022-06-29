@@ -303,6 +303,7 @@ class Config(metaclass=Singleton):
             'aws_mongo_backup_minimum_size': '50',
             'aws_postgres_backup_minimum_size': '50',
             'aws_redis_backup_minimum_size': '5',
+            'aws_s3_region_name': '',
             'aws_secret_key': '',
             'aws_validate_credentials': True,
             'backend_server_role': 'primary',
@@ -577,6 +578,7 @@ class Config(metaclass=Singleton):
         validation = AWSValidation(
             aws_access_key_id=self.__dict['aws_access_key'],
             aws_secret_access_key=self.__dict['aws_secret_key'],
+            aws_s3_region_name=self.__dict['aws_s3_region_name'],
         )
         self.__dict['aws_credentials_valid'] = validation.validate_credentials()
 
@@ -857,10 +859,14 @@ class Config(metaclass=Singleton):
             self.__dict['aws_bucket_name'] = CLI.colored_input(
                 'AWS Bucket name', CLI.COLOR_QUESTION,
                 self.__dict['aws_bucket_name'])
+            self.__dict['aws_s3_region_name'] = CLI.colored_input(
+                'AWS Region Name', CLI.COLOR_QUESTION,
+            )
         else:
             self.__dict['aws_access_key'] = ''
             self.__dict['aws_secret_key'] = ''
             self.__dict['aws_bucket_name'] = ''
+            self.__dict['aws_s3_region_name'] = ''
 
     def __questions_aws_validate_credentials(self):
         """

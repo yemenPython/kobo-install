@@ -16,7 +16,7 @@ class AWSValidation:
 
     METHOD = 'POST'
     SERVICE = 'sts'
-    REGION = 'us-east-1'
+    # REGION = 'us-east-1'
     HOST = 'sts.amazonaws.com'
     ENDPOINT = 'https://sts.amazonaws.com'
     REQUEST_PARAMETERS = 'Action=GetCallerIdentity&Version=2011-06-15'
@@ -25,9 +25,10 @@ class AWSValidation:
     PAYLOAD_HASH = hashlib.sha256(''.encode()).hexdigest()
     ALGORITHM = 'AWS4-HMAC-SHA256'
 
-    def __init__(self, aws_access_key_id, aws_secret_access_key):
+    def __init__(self, aws_access_key_id, aws_secret_access_key, aws_s3_region_name):
         self.access_key = aws_access_key_id
         self.secret_key = aws_secret_access_key
+        self.region = aws_s3_region_name
 
     @staticmethod
     def _sign(key, msg):
@@ -67,7 +68,7 @@ class AWSValidation:
         )
 
         credential_scope = '/'.join(
-            [datestamp, self.REGION, self.SERVICE, 'aws4_request']
+            [datestamp, self.region, self.SERVICE, 'aws4_request']
         )
 
         string_to_sign = '\n'.join(
@@ -80,7 +81,7 @@ class AWSValidation:
         )
 
         signing_key = self._get_signature_key(
-            self.secret_key, datestamp, self.REGION, self.SERVICE
+            self.secret_key, datestamp, self.region, self.SERVICE
         )
 
         signature = hmac.new(
