@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
+import base64
 import datetime
 import hashlib
 import hmac
+import json
+from datetime import timedelta
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+import requests
 
 
 class AWSValidation:
@@ -25,9 +30,16 @@ class AWSValidation:
     PAYLOAD_HASH = hashlib.sha256(''.encode()).hexdigest()
     ALGORITHM = 'AWS4-HMAC-SHA256'
 
-    def __init__(self, aws_access_key_id, aws_secret_access_key, aws_s3_region_name):
+    def __init__(
+        self,
+        aws_access_key_id: str,
+        aws_secret_access_key: str,
+        aws_bucket_name: str,
+        aws_s3_region_name: str,
+    ):
         self.access_key = aws_access_key_id
         self.secret_key = aws_secret_access_key
+        self.bucket_name = aws_bucket_name
         self.region = aws_s3_region_name
 
     @staticmethod
@@ -103,16 +115,81 @@ class AWSValidation:
 
         return request_url, headers
 
+    # def validate_credentials(self):
+    #     request_url, headers = self._get_request_url_and_headers()
+    #     req = Request(request_url, headers=headers, method=self.METHOD)
+    #
+    #     try:
+    #         with urlopen(req) as res:
+    #             if res.status == 200:
+    #                 return True
+    #             else:
+    #                 return False
+    #     except HTTPError as e:
+    #         return False
+
     def validate_credentials(self):
-        request_url, headers = self._get_request_url_and_headers()
-        req = Request(request_url, headers=headers, method=self.METHOD)
+        now = datetime.date.today()
+        expiration = now + timedelta(hours=36)
+        amzdate = now.strftime('%Y%m%dT%H%M%SZ')
+        datestamp = now.strftime('%Y%m%d')
+        # now_2_str = str(int(now.timestamp()))
+        policy = json.dumps({
+            'expiration': expiration.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'conditions': [
+                {'bucket': self.bucket_name},
+                ['starts-with', '$key', '/kobo-install/'],
+                {'acl': 'private'},
+                {
+                 'success_action_redirect': f'https://{self.bucket_name}.s3.amazonaws.com/kobo-install/test-{datestamp}.html'},
+                ['starts-with', '$Content-Type', 'text/'],
+                {'x-amz-meta-uuid': '14365123651274'},
+                {'x-amz-server-side-encryption': 'AES256'},
+                ['starts-with', '$x-amz-meta-tag', ''],
+                {'x-amz-credential': f'{self.access_key}/{datestamp}/{self.region}/s3/aws4_request'},
+                {'x-amz-algorithm': 'AWS4-HMAC-SHA256'},
+                {'x-amz-date': amzdate}
+            ]
+        })
+        base64_policy = base64.b64encode(policy.encode())
+        signature_key = self._get_signature_key(
+            self.secret_key, datestamp, self.region, 's3'
+        )
 
-        try:
-            with urlopen(req) as res:
-                if res.status == 200:
-                    return True
-                else:
-                    return False
-        except HTTPError as e:
-            return False
+        signature = hmac.new(
+            signature_key, base64_policy, hashlib.sha256
+        ).hexdigest()
 
+        data = {
+            'key': f'/kobo-install/test-{datestamp}.html',
+            'acl': 'public-read',
+            'success_action_redirect': f'https://{self.bucket_name}.s3.amazonaws.com/kobo-install/test-{datestamp}.html',
+            'Content-Type': 'text/html',
+            'x-amz-meta-uuid': '14365123651274',
+            'x-amz-server-side-encryption': 'AES256',
+            'x-amz-credential': f'{self.access_key}/{datestamp}/{self.region}/s3/aws4_request',
+            'x-amz-algorithm': 'AWS4-HMAC-SHA256',
+            'x-amz-meta-tag': '',
+            'x-amz-date': amzdate,
+            'Policy': base64_policy.decode(),
+            'x-amz-signature': signature,
+        }
+
+        url = f'https://{self.bucket_name}.s3.amazonaws.com/'
+        with open(f'/tmp/test-{datestamp}.html', 'wb') as f:
+            f.write(b'<html><body>Hello World!</body></html>')
+
+        with open(f'/tmp/test-{datestamp}.html', 'rb') as f:
+            resp = requests.post(url, data=data, files={'file': f})
+            print('RESP', resp.content, flush=True)
+
+        return resp
+
+        # When it works with request, let's try to make it work directly with urllib.
+        #headers = {
+        #    'Content-Type': 'multipart/form-data'
+        #}
+        #    data['file'] = f
+        #    req = Request(url, headers=headers, data=data, method='POST')  # this will make the method "POST"
+        #    with urlopen(req) as resp:
+        #        print('RESP', resp, flush=True)
